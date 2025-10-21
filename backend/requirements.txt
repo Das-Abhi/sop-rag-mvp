@@ -1,0 +1,65 @@
+# Web Framework
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+
+# Database
+sqlalchemy==2.0.23
+alembic==1.13.1
+psycopg2-binary==2.9.9
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Vector Store
+chromadb==0.4.18
+sentence-transformers==2.2.2
+
+# PDF Processing
+pymupdf==1.23.5
+pdfplumber==0.10.3
+camelot-py==0.11.5
+pymupdf4llm==0.3.14
+
+# OCR
+paddleocr==2.7.0.3
+
+# Image Processing
+Pillow==10.1.0
+opencv-python==4.8.1.78
+numpy==1.24.3
+
+# Table Extraction
+pandas==2.1.3
+
+# Cache & Message Queue
+redis==5.0.1
+celery==5.3.4
+
+# HTTP
+httpx==0.25.1
+requests==2.31.0
+
+# Object Storage
+minio==7.2.0
+
+# Embeddings & Models
+transformers==4.35.2
+torch==2.1.1
+
+# LLM & Vision
+ollama==0.0.52
+
+# Utilities
+python-dotenv==1.0.0
+loguru==0.7.2
+xxhash==3.4.1
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.1
+
+# Code Quality
+black==23.12.1
+flake8==6.1.0
+mypy==1.7.1
