@@ -10,7 +10,7 @@ from loguru import logger
 # Database URL
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://sop_user:sop_password@localhost:5432/sop_rag"
+    "postgresql://user:password@localhost:5432/sop_rag"
 )
 
 # Create engine
