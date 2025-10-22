@@ -95,7 +95,7 @@ const ChatInterface: React.FC = () => {
 
       {/* Messages */}
       <div className="flex-1 overflow-hidden">
-        <MessageList messages={messages} />
+        <MessageList messages={messages} loading={loading} />
       </div>
 
       {/* Input */}

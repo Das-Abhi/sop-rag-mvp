@@ -1,12 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import { Message } from '../types';
 import MessageBubble from './MessageBubble';
+import ThinkingLoader from './ThinkingLoader';
 
 interface MessageListProps {
   messages: Message[];
+  loading?: boolean;
 }
 
-const MessageList: React.FC<MessageListProps> = ({ messages }) => {
+const MessageList: React.FC<MessageListProps> = ({ messages, loading }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -30,6 +32,13 @@ const MessageList: React.FC<MessageListProps> = ({ messages }) => {
           {messages.map((message) => (
             <MessageBubble key={message.id} message={message} />
           ))}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-gray-100 text-gray-900 rounded-lg p-4">
+                <ThinkingLoader />
+              </div>
+            </div>
+          )}
           <div ref={messagesEndRef} />
         </>
       )}
