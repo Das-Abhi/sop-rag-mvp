@@ -38,13 +38,21 @@ async def query(request: QueryRequest):
 
         logger.info(f"Processing query: {query_text[:50]}...")
 
+        # Build system prompt with document context to help resolve pronouns
+        system_prompt = request.system_prompt
+        if not system_prompt:
+            doc_context = ""
+            if request.document_ids:
+                doc_context = f" You are analyzing the following documents: {', '.join(request.document_ids)}."
+            system_prompt = f"You are a helpful assistant. Answer the user's question based on the provided context. If a pronoun like 'he', 'she', 'they' is used, refer to the main person/subject in the documents.{doc_context} If the context doesn't contain relevant information, say so."
+
         # Call RAG engine
         rerank_top_k = request.rerank_top_k or request.top_k
         result = rag_engine.answer_query(
             query=query_text,
             top_k=request.top_k,
             rerank_top_k=rerank_top_k,
-            system_prompt=request.system_prompt
+            system_prompt=system_prompt
         )
 
         logger.info(f"Query processed successfully, {len(result.get('citations', []))} sources")

@@ -266,7 +266,8 @@ class RAGEngine:
                 }
 
             # Step 2: Rerank results (use negative threshold for cross-encoder scores)
-            reranked_chunks = self.rerank_results(query, retrieved_chunks, rerank_top_k, threshold=-5.0)
+            # Lower threshold (-7.0) allows more permissive matching for edge cases like pronouns
+            reranked_chunks = self.rerank_results(query, retrieved_chunks, rerank_top_k, threshold=-7.0)
 
             # Step 3: Generate response with citations
             result = self.generate_with_citations(query, reranked_chunks, system_prompt)

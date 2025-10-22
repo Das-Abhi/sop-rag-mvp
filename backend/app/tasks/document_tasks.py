@@ -92,9 +92,20 @@ def process_document(self, document_id: str, file_path: str, document_type: str 
             meta={"step": 4, "total_steps": total_steps, "message": "Creating semantic chunks"}
         )
 
+        # Extract filename from file_path for metadata
+        filename = os.path.basename(file_path).replace(".pdf", "").replace(".txt", "").replace(".docx", "")
+
         chunking_engine = ChunkingEngine()
-        chunks = chunking_engine.chunk_text(extracted_text, document_id)
-        logger.info(f"Created {len(chunks)} chunks")
+        chunks = chunking_engine.chunk_text(
+            extracted_text,
+            document_id,
+            metadata={
+                "source_file": filename,
+                "document_id": document_id,
+                "page_num": 0  # Default to page 0, can be enhanced for multi-page PDFs
+            }
+        )
+        logger.info(f"Created {len(chunks)} chunks with metadata")
 
         # Step 5: Generate embeddings and index
         self.update_state(
