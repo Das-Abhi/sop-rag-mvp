@@ -11,6 +11,7 @@ const DocumentManager: React.FC = () => {
     loading,
     error,
     setDocuments,
+    updateDocument,
     setLoading,
     setError,
   } = useDocumentStore();
@@ -83,32 +84,13 @@ const DocumentManager: React.FC = () => {
           // Handle processing update messages
           if (type === 'processing_update') {
             console.log(`Document ${document_id}: ${status} (${progress}%) - ${current_step}`);
-
-            // Update the document in the store
-            setDocuments((prevDocs: Document[]) => prevDocs.map((doc: Document) => {
-              if (doc.document_id === document_id) {
-                return {
-                  ...doc,
-                  status
-                };
-              }
-              return doc;
-            }));
+            updateDocument(document_id, { status });
           }
 
           // Handle document status messages (sent on subscribe)
           if (type === 'document_status') {
             console.log(`Document ${document_id} status: ${status}`);
-
-            setDocuments((prevDocs: Document[]) => prevDocs.map((doc: Document) => {
-              if (doc.document_id === document_id) {
-                return {
-                  ...doc,
-                  status
-                };
-              }
-              return doc;
-            }));
+            updateDocument(document_id, { status });
           }
         } catch (err) {
           console.error('Error parsing WebSocket message:', err);
