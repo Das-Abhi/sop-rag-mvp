@@ -7,22 +7,20 @@ interface CitationCardProps {
   index: number;
 }
 
-const CitationCard: React.FC<CitationCardProps> = ({ citation, index }) => {
+const CitationCard: React.FC<CitationCardProps> = ({ citation }) => {
   return (
-    <div className="flex items-start gap-2 text-xs bg-gray-50 p-2 rounded">
+    <div className="flex items-start gap-2 text-xs bg-amber-50 border border-amber-200 p-3 rounded hover:bg-amber-100 transition-colors cursor-pointer">
       <div className="flex-shrink-0">
-        <FileText size={14} className="text-gray-600 mt-0.5" />
+        <FileText size={14} className="text-amber-600 mt-0.5" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-gray-700 truncate">{index}. {citation.source}</p>
+        <p className="font-medium text-amber-900 truncate">[{citation.index}] {citation.source}</p>
         {citation.page && (
-          <p className="text-gray-500">Page {citation.page}</p>
+          <p className="text-amber-700 text-xs">Page {citation.page}</p>
         )}
-        {citation.confidence && (
-          <p className="text-gray-500">
-            Confidence: {(citation.confidence * 100).toFixed(0)}%
-          </p>
-        )}
+        <p className="text-amber-700 text-xs mt-1 line-clamp-2">
+          {citation.content_preview}
+        </p>
       </div>
     </div>
   );

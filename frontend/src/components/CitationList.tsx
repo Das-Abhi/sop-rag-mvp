@@ -7,12 +7,16 @@ interface CitationListProps {
 }
 
 const CitationList: React.FC<CitationListProps> = ({ citations }) => {
+  if (!citations || citations.length === 0) {
+    return null;
+  }
+
   return (
     <div className="space-y-2">
-      <p className="text-xs font-semibold text-gray-600 uppercase">Sources</p>
-      <div className="space-y-1">
-        {citations.map((citation, idx) => (
-          <CitationCard key={idx} citation={citation} index={idx + 1} />
+      <p className="text-xs font-semibold text-amber-900 uppercase">📚 Sources ({citations.length})</p>
+      <div className="space-y-2">
+        {citations.map((citation) => (
+          <CitationCard key={citation.index} citation={citation} index={citation.index} />
         ))}
       </div>
     </div>

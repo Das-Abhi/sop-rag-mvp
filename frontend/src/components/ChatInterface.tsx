@@ -57,13 +57,13 @@ const ChatInterface: React.FC = () => {
 
     try {
       const response = await queryAPI.submit(query, selectedDocuments);
-      const { query_id, response_text, citations, latency_ms } = response.data;
+      const { response: responseText, citations } = response.data;
 
       const assistantMessage: Message = {
-        id: query_id,
+        id: `assistant-${Date.now()}`,
         type: 'assistant',
-        content: response_text,
-        citations,
+        content: responseText,
+        citations: citations && citations.length > 0 ? citations : undefined,
         timestamp: new Date(),
       };
       addMessage(assistantMessage);

@@ -21,19 +21,21 @@ export interface Chunk {
 }
 
 export interface Citation {
+  index: number;
   source: string;
-  page?: number;
-  confidence?: number;
-  chunk_id?: string;
+  page?: number | null;
+  content_preview: string;
 }
 
 export interface QueryResponse {
-  query_id: string;
-  response_text: string;
+  response: string;
   citations: Citation[];
-  chunks_retrieved: number;
-  chunks_reranked: number;
-  latency_ms: number;
+  num_sources: number;
+  metadata?: {
+    retrieved_chunks: number;
+    reranked_chunks: number;
+    query_length: number;
+  };
 }
 
 export interface Message {
