@@ -14,6 +14,8 @@ from app.celery_app import app as celery_app
 from app.tasks.document_tasks import process_document
 from app.database import SessionLocal
 from app.crud import DocumentCRUD
+from app.services.vector_store import VectorStore
+from app.core.cache_manager import CacheManager
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -190,13 +192,13 @@ async def list_documents(status: str = None, page: int = 1, page_size: int = 10)
 @router.delete("/{document_id}")
 async def delete_document(document_id: str):
     """
-    Delete a document
+    Delete a document and its embeddings from all storage systems
 
     Args:
         document_id: Document ID
 
     Returns:
-        Success message
+        Success message with deletion details
     """
     db = SessionLocal()
     try:
@@ -204,11 +206,32 @@ async def delete_document(document_id: str):
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        DocumentCRUD.delete(db, document_id)
-        db.commit()
-        logger.info(f"Document deleted: {document_id}")
+        # Initialize vector store and cache manager for complete cleanup
+        vector_store = VectorStore()
+        cache_manager = CacheManager()
 
-        return {"message": "Document deleted successfully", "document_id": document_id}
+        # Delete from all storage systems
+        success, chunk_count = DocumentCRUD.delete_with_embeddings(
+            db=db,
+            document_id=document_id,
+            vector_store=vector_store,
+            cache_manager=cache_manager
+        )
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete document")
+
+        logger.info(f"Document {document_id} deleted successfully ({chunk_count} chunks removed)")
+        return {
+            "message": "Document deleted successfully",
+            "document_id": document_id,
+            "chunks_deleted": chunk_count
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting document {document_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error deleting document: {str(e)}")
     finally:
         db.close()
 

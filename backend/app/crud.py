@@ -81,6 +81,53 @@ class DocumentCRUD:
         return False
 
     @staticmethod
+    def delete_with_embeddings(db: Session, document_id: str, vector_store=None, cache_manager=None):
+        """
+        Delete document from all storage systems (PostgreSQL, ChromaDB, Redis cache)
+
+        Args:
+            db: Database session
+            document_id: Document ID to delete
+            vector_store: VectorStore instance (optional, for cleaning ChromaDB)
+            cache_manager: CacheManager instance (optional, for cache invalidation)
+
+        Returns:
+            Tuple (success: bool, deleted_chunk_count: int)
+        """
+        doc = DocumentCRUD.get(db, document_id)
+        if not doc:
+            return False, 0
+
+        try:
+            # Get all chunks before deletion (for vector store cleanup)
+            chunks = db.query(Chunk).filter(Chunk.document_id == document_id).all()
+            chunk_ids = [c.chunk_id for c in chunks]
+            chunk_count = len(chunks)
+
+            # Delete from PostgreSQL (cascade deletes chunks)
+            db.delete(doc)
+            db.commit()
+            logger.info(f"Deleted document {document_id} from PostgreSQL")
+
+            # Delete embeddings from ChromaDB
+            if vector_store and chunk_ids:
+                for collection in vector_store.collections_names:
+                    vector_store.delete_chunks(collection, chunk_ids)
+                logger.info(f"Deleted {len(chunk_ids)} embeddings for document {document_id}")
+
+            # Invalidate cache entries
+            if cache_manager:
+                cache_manager.invalidate_cache("query:*")
+                logger.info(f"Invalidated query cache for document {document_id}")
+
+            logger.info(f"Document {document_id} deleted from all storage systems")
+            return True, chunk_count
+
+        except Exception as e:
+            logger.error(f"Error deleting document {document_id}: {e}")
+            return False, 0
+
+    @staticmethod
     def count(db: Session, status: Optional[str] = None) -> int:
         """Count documents"""
         query = db.query(Document)
