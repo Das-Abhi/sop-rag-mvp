@@ -102,7 +102,8 @@ class RAGEngine:
         self,
         query: str,
         chunks: List[Dict],
-        top_k: int = 5
+        top_k: int = 5,
+        threshold: float = -5.0
     ) -> List[Dict]:
         """
         Rerank retrieved chunks using reranker model
@@ -111,6 +112,7 @@ class RAGEngine:
             query: Query text
             chunks: List of retrieved chunks
             top_k: Number of top results to return after reranking
+            threshold: Minimum relevance score (cross-encoder scores can be negative, default -5.0)
 
         Returns:
             Reranked list of chunks
@@ -125,9 +127,10 @@ class RAGEngine:
                 reranked_chunks = self.reranker_service.rerank(
                     query=query,
                     chunks=chunks,
-                    top_k=top_k
+                    top_k=top_k,
+                    threshold=threshold
                 )
-                logger.info(f"Reranked {len(chunks)} chunks to top {len(reranked_chunks)}")
+                logger.info(f"Reranked {len(chunks)} chunks to top {len(reranked_chunks)} (threshold={threshold})")
                 return reranked_chunks
             else:
                 # Fallback: return top-k by similarity
@@ -256,8 +259,8 @@ class RAGEngine:
                     }
                 }
 
-            # Step 2: Rerank results
-            reranked_chunks = self.rerank_results(query, retrieved_chunks, rerank_top_k)
+            # Step 2: Rerank results (use negative threshold for cross-encoder scores)
+            reranked_chunks = self.rerank_results(query, retrieved_chunks, rerank_top_k, threshold=-5.0)
 
             # Step 3: Generate response with citations
             result = self.generate_with_citations(query, reranked_chunks, system_prompt)
