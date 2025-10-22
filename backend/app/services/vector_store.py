@@ -4,7 +4,6 @@ ChromaDB vector store integration for storing and retrieving document chunks
 """
 from typing import List, Dict, Optional
 import chromadb
-from chromadb.config import Settings
 from loguru import logger
 import os
 
@@ -25,13 +24,13 @@ class VectorStore:
         # Create directory if it doesn't exist
         os.makedirs(chroma_path, exist_ok=True)
 
-        # Initialize ChromaDB client with persistent storage
-        settings = Settings(
-            chroma_db_impl="duckdb+parquet",
-            persist_directory=chroma_path,
-            anonymized_telemetry=False,
-        )
-        self.client = chromadb.Client(settings)
+        # Initialize ChromaDB client with persistent storage (new API)
+        try:
+            self.client = chromadb.PersistentClient(path=chroma_path)
+        except Exception:
+            # Fallback for older ChromaDB versions
+            self.client = chromadb.Client()
+
         self.collections = {}
 
         # Initialize all collections
