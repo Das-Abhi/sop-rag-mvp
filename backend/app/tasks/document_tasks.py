@@ -102,8 +102,20 @@ def process_document(self, document_id: str, file_path: str, document_type: str 
             meta={"step": 5, "total_steps": total_steps, "message": "Generating embeddings"}
         )
 
+        # Convert chunks to serializable dicts for Celery
+        chunks_data = [
+            {
+                "chunk_id": chunk.chunk_id,
+                "content": chunk.content,
+                "chunk_type": chunk.chunk_type,
+                "token_count": chunk.token_count,
+                "metadata": chunk.metadata
+            }
+            for chunk in chunks
+        ]
+
         # Call embedding task
-        embedding_result = generate_embeddings.delay(document_id, chunks)
+        embedding_result = generate_embeddings.delay(document_id, chunks_data)
         logger.info(f"Embedding task queued: {embedding_result.id}")
 
         result = {
@@ -153,7 +165,7 @@ def generate_embeddings(self, document_id: str, chunks: list):
         # Prepare chunks for vector store
         chunks_with_embeddings = []
 
-        for i, chunk in enumerate(chunks):
+        for i, chunk_data in enumerate(chunks):
             if i % 10 == 0:
                 self.update_state(
                     state="PROGRESS",
@@ -167,25 +179,25 @@ def generate_embeddings(self, document_id: str, chunks: list):
 
             try:
                 # Generate embedding for chunk
-                embedding = embedding_service.embed_text(chunk.content)
+                embedding = embedding_service.embed_text(chunk_data["content"])
 
                 chunk_dict = {
-                    "id": chunk.chunk_id,
-                    "chunk_id": chunk.chunk_id,
-                    "content": chunk.content,
+                    "id": chunk_data["chunk_id"],
+                    "chunk_id": chunk_data["chunk_id"],
+                    "content": chunk_data["content"],
                     "embedding": embedding,
                     "metadata": {
                         "document_id": document_id,
-                        "chunk_type": chunk.chunk_type,
-                        "token_count": chunk.token_count,
-                        **chunk.metadata
+                        "chunk_type": chunk_data.get("chunk_type", "text"),
+                        "token_count": chunk_data.get("token_count", 0),
+                        **chunk_data.get("metadata", {})
                     }
                 }
                 chunks_with_embeddings.append(chunk_dict)
                 processed += 1
 
             except Exception as e:
-                logger.warning(f"Error embedding chunk {chunk.chunk_id}: {e}")
+                logger.warning(f"Error embedding chunk {chunk_data.get('chunk_id', 'unknown')}: {e}")
 
         # Index chunks in vector store
         collection = "text_chunks"
