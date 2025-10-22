@@ -25,6 +25,8 @@ export interface Citation {
   source: string;
   page?: number | null;
   content_preview: string;
+  confidence?: number;
+  document_id?: string;
 }
 
 export interface QueryResponse {

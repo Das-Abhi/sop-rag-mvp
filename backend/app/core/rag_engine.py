@@ -186,7 +186,8 @@ class RAGEngine:
         self,
         query: str,
         context_chunks: List[Dict],
-        system_prompt: str = None
+        system_prompt: str = None,
+        max_citations: int = 3
     ) -> Dict:
         """
         Generate response with source citations
@@ -195,23 +196,28 @@ class RAGEngine:
             query: Query text
             context_chunks: Retrieved context chunks
             system_prompt: Optional system prompt
+            max_citations: Maximum number of citations to include (default: 3)
 
         Returns:
             Dictionary with response and citations
         """
         try:
-            response, sources = self.generate_response(query, context_chunks, system_prompt)
+            # Use only top chunks for LLM response (better quality, faster)
+            # But keep all for citation extraction
+            top_chunks_for_llm = context_chunks[:max_citations]
 
-            # Extract citations
-            citations = self._extract_citations(sources)
+            response, _ = self.generate_response(query, top_chunks_for_llm, system_prompt)
+
+            # Extract citations from actually used chunks
+            citations = self._extract_citations(top_chunks_for_llm)
 
             result = {
                 "response": response,
                 "citations": citations,
-                "num_sources": len(sources)
+                "num_sources": len(citations)
             }
 
-            logger.info(f"Generated response with {len(citations)} citations")
+            logger.info(f"Generated response with {len(citations)} citations from {len(context_chunks)} retrieved chunks")
             return result
 
         except Exception as e:
@@ -314,21 +320,38 @@ class RAGEngine:
 
     def _extract_citations(self, chunks: List[Dict]) -> List[Dict]:
         """
-        Extract citations from source chunks
+        Extract citations from source chunks with relevance scores
 
         Args:
-            chunks: Source chunks
+            chunks: Source chunks with metadata
 
         Returns:
-            List of citations
+            List of citations with document name, page, confidence score, and preview
         """
         citations = []
         for i, chunk in enumerate(chunks):
+            metadata = chunk.get("metadata", {})
+
+            # Extract document name from source_file or document_id
+            source_file = metadata.get("source_file", "")
+            if source_file:
+                # Extract just the filename without path
+                doc_name = source_file.split("/")[-1].replace(".pdf", "").replace(".txt", "").replace(".docx", "")
+            else:
+                doc_name = "Unknown Document"
+
+            # Get relevance score from reranker (0-1 scale, convert from cross-encoder which is ~-3 to 0)
+            relevance_score = chunk.get("relevance_score", 0)
+            # Cross-encoder scores are typically -5 to 0, normalize to 0-1 confidence
+            confidence = max(0, min(1, (relevance_score + 5) / 5.0))  # Normalize to 0-1 range
+
             citation = {
                 "index": i + 1,
-                "source": chunk.get("metadata", {}).get("source_file", "unknown"),
-                "page": chunk.get("metadata", {}).get("page_num", None),
-                "content_preview": chunk.get("content", "")[:200]
+                "source": doc_name,
+                "page": metadata.get("page_num") or metadata.get("page"),
+                "content_preview": chunk.get("content", "")[:200],
+                "confidence": round(confidence, 2),  # 0-1 scale, rounded to 2 decimals
+                "document_id": metadata.get("document_id", "")
             }
             citations.append(citation)
 
