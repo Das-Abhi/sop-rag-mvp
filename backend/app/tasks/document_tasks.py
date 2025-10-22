@@ -114,13 +114,25 @@ def process_document(self, document_id: str, file_path: str, document_type: str 
             for chunk in chunks
         ]
 
+        # Update document in database with chunk counts
+        from app.database import SessionLocal
+        from app.crud import DocumentCRUD
+        db = SessionLocal()
+        try:
+            DocumentCRUD.update_chunk_counts(db, document_id, len(chunks), 0, 0)
+            DocumentCRUD.update_status(db, document_id, "processing")
+            db.commit()
+            logger.info(f"Updated chunk counts in DB: {len(chunks)} text chunks")
+        finally:
+            db.close()
+
         # Call embedding task
         embedding_result = generate_embeddings.delay(document_id, chunks_data)
         logger.info(f"Embedding task queued: {embedding_result.id}")
 
         result = {
             "document_id": document_id,
-            "status": "completed",
+            "status": "processing",
             "chunk_count": len(chunks),
             "text_chunks": len(chunks),
             "image_chunks": 0,
@@ -129,7 +141,7 @@ def process_document(self, document_id: str, file_path: str, document_type: str 
             "embedding_task_id": embedding_result.id
         }
 
-        logger.info(f"Document processing completed: {document_id}")
+        logger.info(f"Document processing step completed: {document_id}")
         return result
 
     except Exception as e:
@@ -205,6 +217,17 @@ def generate_embeddings(self, document_id: str, chunks: list):
 
         if not success:
             raise Exception("Failed to add chunks to vector store")
+
+        # Mark document as completed in database
+        from app.database import SessionLocal
+        from app.crud import DocumentCRUD
+        db = SessionLocal()
+        try:
+            DocumentCRUD.update_status(db, document_id, "completed")
+            db.commit()
+            logger.info(f"Marked document {document_id} as completed")
+        finally:
+            db.close()
 
         result = {
             "document_id": document_id,

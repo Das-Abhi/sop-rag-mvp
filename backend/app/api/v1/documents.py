@@ -12,12 +12,10 @@ import shutil
 from app.schemas import DocumentInfo, DocumentListResponse, DocumentCreate
 from app.celery_app import app as celery_app
 from app.tasks.document_tasks import process_document
+from app.database import SessionLocal
+from app.crud import DocumentCRUD
 
 router = APIRouter(prefix="/documents", tags=["documents"])
-
-
-# In-memory storage for demo (replace with database in production)
-documents_db = {}
 
 
 @router.post("/upload", response_model=DocumentInfo)
@@ -55,30 +53,36 @@ async def upload_document(file: UploadFile = File(...)):
         # Determine document type
         doc_type = "pdf" if file.content_type == "application/pdf" else "txt"
 
-        # Store document metadata
-        doc_metadata = {
-            "document_id": document_id,
-            "title": file.filename or "Untitled",
-            "description": None,
-            "file_path": file_path,
-            "file_size": len(content),
-            "page_count": 0,
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
-            "status": "processing",
-            "text_chunks": 0,
-            "image_chunks": 0,
-            "table_chunks": 0
-        }
-        documents_db[document_id] = doc_metadata
+        # Store in database
+        db = SessionLocal()
+        try:
+            doc = DocumentCRUD.create(
+                db=db,
+                document_id=document_id,
+                title=file.filename or "Untitled",
+                file_path=file_path,
+                file_size=len(content),
+                file_type=doc_type
+            )
+            db.commit()
+        finally:
+            db.close()
 
         # Queue background task
         task = process_document.delay(document_id, file_path, doc_type)
-        documents_db[document_id]["celery_task_id"] = task.id
-
         logger.info(f"Document uploaded: {document_id}, task: {task.id}")
 
-        return DocumentInfo(**doc_metadata)
+        return DocumentInfo(
+            document_id=doc.document_id,
+            title=doc.title,
+            file_path=doc.file_path,
+            status=doc.status,
+            text_chunks=doc.text_chunks,
+            image_chunks=doc.image_chunks,
+            table_chunks=doc.table_chunks,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at
+        )
 
     except HTTPException:
         raise
@@ -98,11 +102,25 @@ async def get_document(document_id: str):
     Returns:
         DocumentInfo with current status
     """
-    if document_id not in documents_db:
-        raise HTTPException(status_code=404, detail="Document not found")
+    db = SessionLocal()
+    try:
+        doc = DocumentCRUD.get(db, document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
 
-    doc = documents_db[document_id]
-    return DocumentInfo(**doc)
+        return DocumentInfo(
+            document_id=doc.document_id,
+            title=doc.title,
+            file_path=doc.file_path,
+            status=doc.status,
+            text_chunks=doc.text_chunks,
+            image_chunks=doc.image_chunks,
+            table_chunks=doc.table_chunks,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at
+        )
+    finally:
+        db.close()
 
 
 @router.get("", response_model=DocumentListResponse)
@@ -118,22 +136,39 @@ async def list_documents(status: str = None, page: int = 1, page_size: int = 10)
     Returns:
         DocumentListResponse with documents
     """
-    docs = list(documents_db.values())
+    db = SessionLocal()
+    try:
+        docs = DocumentCRUD.list_all(db)
 
-    if status:
-        docs = [d for d in docs if d.get("status") == status]
+        if status:
+            docs = [d for d in docs if d.status == status]
 
-    total = len(docs)
-    start = (page - 1) * page_size
-    end = start + page_size
-    paginated_docs = docs[start:end]
+        total = len(docs)
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated_docs = docs[start:end]
 
-    return DocumentListResponse(
-        documents=[DocumentInfo(**d) for d in paginated_docs],
-        total=total,
-        page=page,
-        page_size=page_size
-    )
+        return DocumentListResponse(
+            documents=[
+                DocumentInfo(
+                    document_id=doc.document_id,
+                    title=doc.title,
+                    file_path=doc.file_path,
+                    status=doc.status,
+                    text_chunks=doc.text_chunks,
+                    image_chunks=doc.image_chunks,
+                    table_chunks=doc.table_chunks,
+                    created_at=doc.created_at,
+                    updated_at=doc.updated_at
+                )
+                for doc in paginated_docs
+            ],
+            total=total,
+            page=page,
+            page_size=page_size
+        )
+    finally:
+        db.close()
 
 
 @router.delete("/{document_id}")
@@ -147,13 +182,19 @@ async def delete_document(document_id: str):
     Returns:
         Success message
     """
-    if document_id not in documents_db:
-        raise HTTPException(status_code=404, detail="Document not found")
+    db = SessionLocal()
+    try:
+        doc = DocumentCRUD.get(db, document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
 
-    del documents_db[document_id]
-    logger.info(f"Document deleted: {document_id}")
+        DocumentCRUD.delete(db, document_id)
+        db.commit()
+        logger.info(f"Document deleted: {document_id}")
 
-    return {"message": "Document deleted successfully", "document_id": document_id}
+        return {"message": "Document deleted successfully", "document_id": document_id}
+    finally:
+        db.close()
 
 
 @router.put("/{document_id}/status")
@@ -168,14 +209,29 @@ async def update_document_status(document_id: str, status: str):
     Returns:
         Updated DocumentInfo
     """
-    if document_id not in documents_db:
-        raise HTTPException(status_code=404, detail="Document not found")
+    db = SessionLocal()
+    try:
+        doc = DocumentCRUD.get(db, document_id)
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
 
-    if status not in ["pending", "processing", "completed", "error"]:
-        raise HTTPException(status_code=400, detail="Invalid status")
+        if status not in ["pending", "processing", "completed", "error"]:
+            raise HTTPException(status_code=400, detail="Invalid status")
 
-    documents_db[document_id]["status"] = status
-    documents_db[document_id]["updated_at"] = datetime.utcnow()
-    logger.info(f"Document {document_id} status updated to: {status}")
+        updated_doc = DocumentCRUD.update_status(db, document_id, status)
+        db.commit()
+        logger.info(f"Document {document_id} status updated to: {status}")
 
-    return DocumentInfo(**documents_db[document_id])
+        return DocumentInfo(
+            document_id=updated_doc.document_id,
+            title=updated_doc.title,
+            file_path=updated_doc.file_path,
+            status=updated_doc.status,
+            text_chunks=updated_doc.text_chunks,
+            image_chunks=updated_doc.image_chunks,
+            table_chunks=updated_doc.table_chunks,
+            created_at=updated_doc.created_at,
+            updated_at=updated_doc.updated_at
+        )
+    finally:
+        db.close()
