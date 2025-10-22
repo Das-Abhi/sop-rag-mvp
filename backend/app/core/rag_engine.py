@@ -45,6 +45,8 @@ class RAGEngine:
         """
         Retrieve most relevant chunks for a query across multiple collections
 
+        IMPORTANT: Validates all chunks belong to existing documents (deleted docs filtered out)
+
         Args:
             query: Query text
             top_k: Number of top results to return per collection
@@ -52,17 +54,27 @@ class RAGEngine:
             collections: List of collections to search (default: all)
 
         Returns:
-            List of retrieved chunks with similarity scores
+            List of retrieved chunks with similarity scores (only from existing documents)
         """
         try:
             if collections is None:
                 collections = ["text_chunks", "image_chunks", "table_chunks", "composite_chunks"]
 
-            # Check cache first
+            # Get valid document IDs from database (excludes deleted documents)
+            valid_document_ids = self._get_valid_document_ids()
+            if not valid_document_ids:
+                logger.warning("No valid documents in database")
+                return []
+
+            # Check cache ONLY if we have valid documents
+            # (cache is invalidated when documents are deleted)
             cached_results = self.cache_manager.get_cached_query_result(query)
             if cached_results:
-                logger.debug(f"Retrieved cached results for query")
-                return cached_results
+                # Validate cached results belong to existing documents
+                filtered_cached = self._filter_results_by_valid_docs(cached_results, valid_document_ids)
+                if filtered_cached:
+                    logger.debug(f"Retrieved and validated cached results for query")
+                    return filtered_cached
 
             # Generate query embedding
             query_embedding = self.embedding_service.embed_text(query)
@@ -87,16 +99,49 @@ class RAGEngine:
                 except Exception as e:
                     logger.warning(f"Error searching collection '{collection}': {e}")
 
+            # CRITICAL: Filter results to only include chunks from existing documents
+            all_results = self._filter_results_by_valid_docs(all_results, valid_document_ids)
+
             # Sort by similarity score
             all_results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
             all_results = all_results[:top_k * len(collections)]
 
-            logger.info(f"Retrieved {len(all_results)} chunks for query")
+            logger.info(f"Retrieved {len(all_results)} chunks for query (filtered by valid documents)")
             return all_results
 
         except Exception as e:
             logger.error(f"Error retrieving chunks: {e}")
             return []
+
+    def _get_valid_document_ids(self) -> set:
+        """Get set of document IDs that exist in the database"""
+        try:
+            from app.database import SessionLocal
+            from app.crud import DocumentCRUD
+
+            db = SessionLocal()
+            try:
+                docs = DocumentCRUD.list_all(db, limit=10000)  # Get all docs
+                return set(doc.document_id for doc in docs)
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error getting valid document IDs: {e}")
+            return set()
+
+    def _filter_results_by_valid_docs(self, results: List[Dict], valid_doc_ids: set) -> List[Dict]:
+        """Filter search results to only include chunks from existing documents"""
+        filtered = []
+        for result in results:
+            metadata = result.get("metadata", {})
+            doc_id = metadata.get("document_id")
+
+            if doc_id in valid_doc_ids:
+                filtered.append(result)
+            else:
+                logger.debug(f"Skipping chunk from deleted document: {doc_id}")
+
+        return filtered
 
     def rerank_results(
         self,
@@ -323,16 +368,30 @@ class RAGEngine:
         """
         Extract citations from source chunks with relevance scores
 
+        IMPORTANT: Only creates citations for existing documents (validates against database)
+
         Args:
             chunks: Source chunks with metadata
 
         Returns:
             List of citations with document name, page, confidence score, and preview
         """
+        # Get valid document IDs to prevent citing deleted documents
+        valid_doc_ids = self._get_valid_document_ids()
+
         citations = []
-        for i, chunk in enumerate(chunks):
+        citation_index = 1  # Renumber after filtering
+
+        for chunk in chunks:
             metadata = chunk.get("metadata", {})
-            logger.debug(f"Citation {i}: chunk metadata = {metadata}")
+            doc_id = metadata.get("document_id", "")
+
+            # CRITICAL: Skip citations from deleted documents
+            if doc_id and doc_id not in valid_doc_ids:
+                logger.warning(f"Skipping citation from deleted document: {doc_id}")
+                continue
+
+            logger.debug(f"Citation {citation_index}: chunk metadata = {metadata}")
 
             # Extract document name from source_file, document_id, or chunk_id
             source_file = metadata.get("source_file", "")
@@ -342,10 +401,9 @@ class RAGEngine:
                 logger.debug(f"Using source_file: {doc_name}")
             else:
                 # Fallback to document_id if source_file missing (for old indexed documents)
-                doc_id = metadata.get("document_id", "")
                 if doc_id:
                     doc_name = f"Document ({doc_id[:8]}...)"
-                    logger.warning(f"source_file missing, using document_id fallback: {doc_name}")
+                    logger.debug(f"source_file missing, using document_id: {doc_name}")
                 else:
                     doc_name = "Unknown Document"
                     logger.warning(f"No source_file or document_id in metadata: {metadata}")
@@ -356,13 +414,14 @@ class RAGEngine:
             confidence = max(0, min(1, (relevance_score + 5) / 5.0))  # Normalize to 0-1 range
 
             citation = {
-                "index": i + 1,
+                "index": citation_index,
                 "source": doc_name,
                 "page": metadata.get("page_num") or metadata.get("page"),
                 "content_preview": chunk.get("content", "")[:200],
                 "confidence": round(confidence, 2),  # 0-1 scale, rounded to 2 decimals
-                "document_id": metadata.get("document_id", "")
+                "document_id": doc_id
             }
             citations.append(citation)
+            citation_index += 1
 
         return citations
