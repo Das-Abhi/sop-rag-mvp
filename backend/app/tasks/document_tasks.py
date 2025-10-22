@@ -137,8 +137,13 @@ def process_document(self, document_id: str, file_path: str, document_type: str 
 
             # Notify connected clients about status change via WebSocket
             try:
-                from app.services.task_updates import send_processing_update_sync
-                send_processing_update_sync(document_id, "processing", len(chunks))
+                from app.utils.task_updates import send_processing_update_sync
+                send_processing_update_sync(
+                    document_id=document_id,
+                    progress=50,
+                    status="processing",
+                    current_step=f"Chunking complete: {len(chunks)} chunks created"
+                )
             except Exception as e:
                 logger.warning(f"Failed to send WebSocket update: {e}")
         finally:
@@ -168,12 +173,17 @@ def process_document(self, document_id: str, file_path: str, document_type: str 
         try:
             from app.database import SessionLocal
             from app.crud import DocumentCRUD
-            from app.services.task_updates import send_processing_update_sync
+            from app.utils.task_updates import send_processing_update_sync
             db = SessionLocal()
             try:
                 DocumentCRUD.update_status(db, document_id, "error", str(e))
                 db.commit()
-                send_processing_update_sync(document_id, "error", 0, str(e))
+                send_processing_update_sync(
+                    document_id=document_id,
+                    progress=0,
+                    status="error",
+                    current_step=f"Error: {str(e)}"
+                )
             finally:
                 db.close()
         except Exception as notify_err:
@@ -262,8 +272,13 @@ def generate_embeddings(self, document_id: str, chunks: list):
 
             # Notify connected clients about completion via WebSocket
             try:
-                from app.services.task_updates import send_processing_update_sync
-                send_processing_update_sync(document_id, "completed", total_chunks)
+                from app.utils.task_updates import send_processing_update_sync
+                send_processing_update_sync(
+                    document_id=document_id,
+                    progress=100,
+                    status="completed",
+                    current_step=f"Indexing complete: {processed} chunks embedded"
+                )
             except Exception as e:
                 logger.warning(f"Failed to send completion update: {e}")
         finally:
@@ -286,12 +301,17 @@ def generate_embeddings(self, document_id: str, chunks: list):
         try:
             from app.database import SessionLocal
             from app.crud import DocumentCRUD
-            from app.services.task_updates import send_processing_update_sync
+            from app.utils.task_updates import send_processing_update_sync
             db = SessionLocal()
             try:
                 DocumentCRUD.update_status(db, document_id, "error", str(e))
                 db.commit()
-                send_processing_update_sync(document_id, "error", 0, str(e))
+                send_processing_update_sync(
+                    document_id=document_id,
+                    progress=0,
+                    status="error",
+                    current_step=f"Embedding error: {str(e)}"
+                )
             finally:
                 db.close()
         except Exception as notify_err:

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useDocumentStore } from '../stores/documentStore';
 import { documentsAPI } from '../services/api';
+import { Document } from '../types';
 import DocumentList from './DocumentList';
 import DocumentUpload from './DocumentUpload';
 
@@ -31,8 +32,19 @@ const DocumentManager: React.FC = () => {
     setLoading(true);
     try {
       const response = await documentsAPI.list();
-      setDocuments(response.data.documents || []);
+      const docs = response.data.documents || [];
+      setDocuments(docs);
       setError(null);
+
+      // Subscribe to updates for all documents
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        docs.forEach(doc => {
+          wsRef.current?.send(JSON.stringify({
+            action: 'subscribe',
+            document_id: doc.document_id
+          }));
+        });
+      }
     } catch (err) {
       setError('Failed to load documents');
       console.error(err);
@@ -54,29 +66,45 @@ const DocumentManager: React.FC = () => {
 
       ws.onopen = () => {
         console.log('WebSocket connected');
-        // Subscribe to document status updates
-        ws.send(JSON.stringify({
-          action: 'subscribe',
-          channels: ['document_status']
-        }));
+        // Document subscriptions will be set up when documents are fetched
       };
 
       ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
+          const { type, document_id, status, progress, current_step } = message;
 
-          // Handle document status update
-          if (message.type === 'document_status' || message.type === 'processing_update') {
-            const { document_id, status, chunks, error } = message;
+          // Handle subscription confirmation
+          if (type === 'subscription_confirmed') {
+            console.log(`Subscribed to document: ${document_id}`);
+            return;
+          }
+
+          // Handle processing update messages
+          if (type === 'processing_update') {
+            console.log(`Document ${document_id}: ${status} (${progress}%) - ${current_step}`);
 
             // Update the document in the store
-            setDocuments(documents.map(doc => {
+            setDocuments((prevDocs: Document[]) => prevDocs.map((doc: Document) => {
               if (doc.document_id === document_id) {
                 return {
                   ...doc,
-                  status,
-                  text_chunks: chunks || doc.text_chunks,
-                  error_message: error || null
+                  status
+                };
+              }
+              return doc;
+            }));
+          }
+
+          // Handle document status messages (sent on subscribe)
+          if (type === 'document_status') {
+            console.log(`Document ${document_id} status: ${status}`);
+
+            setDocuments((prevDocs: Document[]) => prevDocs.map((doc: Document) => {
+              if (doc.document_id === document_id) {
+                return {
+                  ...doc,
+                  status
                 };
               }
               return doc;
