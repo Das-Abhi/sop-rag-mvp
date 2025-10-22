@@ -32,13 +32,18 @@ async def query(request: QueryRequest):
         raise HTTPException(status_code=503, detail="RAG engine not initialized")
 
     try:
-        logger.info(f"Processing query: {request.query[:50]}...")
+        query_text = request.query or request.query_text
+        if not query_text:
+            raise HTTPException(status_code=400, detail="Query text is required")
+
+        logger.info(f"Processing query: {query_text[:50]}...")
 
         # Call RAG engine
+        rerank_top_k = request.rerank_top_k or request.top_k
         result = rag_engine.answer_query(
-            query=request.query,
+            query=query_text,
             top_k=request.top_k,
-            rerank_top_k=request.rerank_top_k,
+            rerank_top_k=rerank_top_k,
             system_prompt=request.system_prompt
         )
 
@@ -46,6 +51,8 @@ async def query(request: QueryRequest):
 
         return QueryResponse(**result)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error processing query: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
@@ -66,20 +73,25 @@ async def retrieve_chunks(request: QueryRequest):
         raise HTTPException(status_code=503, detail="RAG engine not initialized")
 
     try:
-        logger.info(f"Retrieving chunks for: {request.query[:50]}...")
+        query_text = request.query or request.query_text
+        if not query_text:
+            raise HTTPException(status_code=400, detail="Query text is required")
+
+        logger.info(f"Retrieving chunks for: {query_text[:50]}...")
 
         # Retrieve without generating response
         chunks = rag_engine.retrieve_relevant_chunks(
-            query=request.query,
+            query=query_text,
             top_k=request.top_k
         )
 
         # Rerank if requested
-        if request.rerank_top_k < len(chunks):
+        rerank_top_k = request.rerank_top_k or request.top_k
+        if rerank_top_k and rerank_top_k < len(chunks):
             chunks = rag_engine.rerank_results(
-                query=request.query,
+                query=query_text,
                 chunks=chunks,
-                top_k=request.rerank_top_k
+                top_k=rerank_top_k
             )
 
         logger.info(f"Retrieved {len(chunks)} chunks")
@@ -87,9 +99,11 @@ async def retrieve_chunks(request: QueryRequest):
         return {
             "chunks": chunks,
             "count": len(chunks),
-            "query": request.query
+            "query": query_text
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error retrieving chunks: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving chunks: {str(e)}")

@@ -10,7 +10,7 @@ from app.services.websocket_manager import ws_manager
 from app.crud import ProcessingTaskCRUD, DocumentCRUD
 from app.database import SessionLocal
 
-router = APIRouter(prefix="/ws", tags=["websocket"])
+router = APIRouter(tags=["websocket"])
 
 
 @router.websocket("/ws")

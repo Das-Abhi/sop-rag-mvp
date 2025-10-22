@@ -7,11 +7,21 @@ from typing import List, Optional
 
 class QueryRequest(BaseModel):
     """Query request schema"""
-    query: str = Field(..., min_length=1, description="User query")
+    query: Optional[str] = Field(None, min_length=1, description="User query")
+    query_text: Optional[str] = Field(None, min_length=1, description="User query (alternative field)")
+    document_ids: Optional[List[str]] = Field(None, description="Document IDs to query")
     top_k: int = Field(5, ge=1, le=50, description="Number of results")
+    rerank_top_k: Optional[int] = Field(None, ge=1, le=50, description="Reranking top k")
     include_images: bool = Field(True, description="Include images in results")
     include_tables: bool = Field(True, description="Include tables in results")
     filters: Optional[dict] = Field(None, description="Search filters")
+    system_prompt: Optional[str] = Field(None, description="System prompt for LLM")
+
+    def __init__(self, **data):
+        # Support both 'query' and 'query_text' fields
+        if 'query_text' in data and 'query' not in data:
+            data['query'] = data.pop('query_text')
+        super().__init__(**data)
 
 class Citation(BaseModel):
     """Citation information"""
