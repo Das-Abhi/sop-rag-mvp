@@ -25,19 +25,17 @@ class QueryRequest(BaseModel):
 
 class Citation(BaseModel):
     """Citation information"""
-    chunk_id: str
+    index: int
     source: str
-    page: int
-    confidence: float
-    text: str
+    page: Optional[int] = None
+    content_preview: str
 
 class QueryResponse(BaseModel):
     """Query response schema"""
-    query: str
     response: str
     citations: List[Citation]
-    processing_time: float
-    model: str
+    num_sources: int
+    metadata: Optional[dict] = None
 
 class SearchResult(BaseModel):
     """Individual search result"""
