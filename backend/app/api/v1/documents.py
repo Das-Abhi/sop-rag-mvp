@@ -75,7 +75,10 @@ async def upload_document(file: UploadFile = File(...)):
         return DocumentInfo(
             document_id=doc.document_id,
             title=doc.title,
+            description=doc.description,
             file_path=doc.file_path,
+            file_size=doc.file_size,
+            page_count=doc.page_count,
             status=doc.status,
             text_chunks=doc.text_chunks,
             image_chunks=doc.image_chunks,
@@ -111,7 +114,10 @@ async def get_document(document_id: str):
         return DocumentInfo(
             document_id=doc.document_id,
             title=doc.title,
+            description=doc.description,
             file_path=doc.file_path,
+            file_size=doc.file_size,
+            page_count=doc.page_count,
             status=doc.status,
             text_chunks=doc.text_chunks,
             image_chunks=doc.image_chunks,
@@ -153,7 +159,10 @@ async def list_documents(status: str = None, page: int = 1, page_size: int = 10)
                 DocumentInfo(
                     document_id=doc.document_id,
                     title=doc.title,
+                    description=doc.description,
                     file_path=doc.file_path,
+                    file_size=doc.file_size,
+                    page_count=doc.page_count,
                     status=doc.status,
                     text_chunks=doc.text_chunks,
                     image_chunks=doc.image_chunks,
@@ -225,7 +234,10 @@ async def update_document_status(document_id: str, status: str):
         return DocumentInfo(
             document_id=updated_doc.document_id,
             title=updated_doc.title,
+            description=updated_doc.description,
             file_path=updated_doc.file_path,
+            file_size=updated_doc.file_size,
+            page_count=updated_doc.page_count,
             status=updated_doc.status,
             text_chunks=updated_doc.text_chunks,
             image_chunks=updated_doc.image_chunks,
