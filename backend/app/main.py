@@ -15,6 +15,9 @@ from app.core.llm_service import LLMService
 from app.core.reranker import Reranker
 from app.core.rag_engine import RAGEngine
 
+# Import database
+from app.database import init_db
+
 # Import API routes
 from app.api.v1 import query, documents, processing
 
@@ -49,6 +52,10 @@ async def startup_event():
 
     try:
         logger.info("Initializing SOP RAG MVP services...")
+
+        # Initialize database
+        init_db()
+        logger.info("Database initialized")
 
         # Initialize Vector Store
         chroma_path = os.getenv("CHROMA_PATH", "./data/chromadb")

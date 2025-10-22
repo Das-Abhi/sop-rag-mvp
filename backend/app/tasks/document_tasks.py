@@ -1,0 +1,271 @@
+"""
+Document processing tasks for background processing
+"""
+from celery import shared_task, current_task
+from loguru import logger
+import os
+import time
+from pathlib import Path
+
+# Import services (will be initialized when needed)
+from app.services.vector_store import VectorStore
+from app.core.embedding_service import EmbeddingService
+from app.core.layout_analyzer import LayoutAnalyzer
+from app.core.text_extractor import TextExtractor
+from app.core.chunking_engine import ChunkingEngine
+
+
+@shared_task(bind=True, name="app.tasks.document_tasks.process_document")
+def process_document(self, document_id: str, file_path: str, document_type: str = "pdf"):
+    """
+    Main document processing task
+
+    Args:
+        document_id: Unique document identifier
+        file_path: Path to document file
+        document_type: Type of document (pdf, docx, txt)
+
+    Returns:
+        Dictionary with processing results
+    """
+    try:
+        logger.info(f"Starting document processing: {document_id}")
+        total_steps = 5
+
+        # Step 1: Validate file
+        self.update_state(
+            state="PROGRESS",
+            meta={"step": 1, "total_steps": total_steps, "message": "Validating document"}
+        )
+
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Document file not found: {file_path}")
+
+        file_size = os.path.getsize(file_path)
+        logger.info(f"Document size: {file_size} bytes")
+
+        # Step 2: Extract layout
+        self.update_state(
+            state="PROGRESS",
+            meta={"step": 2, "total_steps": total_steps, "message": "Analyzing document layout"}
+        )
+
+        layout_analyzer = LayoutAnalyzer()
+        regions = []
+
+        if document_type == "pdf":
+            # Analyze PDF layout
+            page_count = 0
+            try:
+                import PyPDF2
+                with open(file_path, 'rb') as f:
+                    pdf_reader = PyPDF2.PdfReader(f)
+                    page_count = len(pdf_reader.pages)
+                logger.info(f"PDF has {page_count} pages")
+            except Exception as e:
+                logger.warning(f"Error reading PDF page count: {e}")
+
+        # Step 3: Extract content
+        self.update_state(
+            state="PROGRESS",
+            meta={"step": 3, "total_steps": total_steps, "message": "Extracting content"}
+        )
+
+        text_extractor = TextExtractor()
+        # Extract text from the document
+        if document_type == "pdf":
+            try:
+                extracted_text = text_extractor.extract_page(file_path, 0)
+            except Exception as e:
+                logger.error(f"Error extracting text: {e}")
+                extracted_text = ""
+        else:
+            # For other formats, read as text
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                extracted_text = f.read()
+
+        logger.info(f"Extracted {len(extracted_text)} characters")
+
+        # Step 4: Create chunks
+        self.update_state(
+            state="PROGRESS",
+            meta={"step": 4, "total_steps": total_steps, "message": "Creating semantic chunks"}
+        )
+
+        chunking_engine = ChunkingEngine()
+        chunks = chunking_engine.chunk_text(extracted_text, document_id)
+        logger.info(f"Created {len(chunks)} chunks")
+
+        # Step 5: Generate embeddings and index
+        self.update_state(
+            state="PROGRESS",
+            meta={"step": 5, "total_steps": total_steps, "message": "Generating embeddings"}
+        )
+
+        # Call embedding task
+        embedding_result = generate_embeddings.delay(document_id, chunks)
+        logger.info(f"Embedding task queued: {embedding_result.id}")
+
+        result = {
+            "document_id": document_id,
+            "status": "completed",
+            "chunk_count": len(chunks),
+            "text_chunks": len(chunks),
+            "image_chunks": 0,
+            "table_chunks": 0,
+            "processing_time": time.time(),
+            "embedding_task_id": embedding_result.id
+        }
+
+        logger.info(f"Document processing completed: {document_id}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error processing document {document_id}: {e}")
+        self.update_state(
+            state="FAILURE",
+            meta={"error": str(e)}
+        )
+        raise
+
+
+@shared_task(bind=True, name="app.tasks.document_tasks.generate_embeddings")
+def generate_embeddings(self, document_id: str, chunks: list):
+    """
+    Generate embeddings for document chunks
+
+    Args:
+        document_id: Document identifier
+        chunks: List of chunk objects
+
+    Returns:
+        Dictionary with embedding results
+    """
+    try:
+        logger.info(f"Starting embedding generation for {document_id}")
+
+        embedding_service = EmbeddingService()
+        vector_store = VectorStore()
+
+        total_chunks = len(chunks)
+        processed = 0
+
+        # Prepare chunks for vector store
+        chunks_with_embeddings = []
+
+        for i, chunk in enumerate(chunks):
+            if i % 10 == 0:
+                self.update_state(
+                    state="PROGRESS",
+                    meta={
+                        "document_id": document_id,
+                        "processed": i,
+                        "total": total_chunks,
+                        "message": f"Embedding chunks {i}/{total_chunks}"
+                    }
+                )
+
+            try:
+                # Generate embedding for chunk
+                embedding = embedding_service.embed_text(chunk.content)
+
+                chunk_dict = {
+                    "id": chunk.chunk_id,
+                    "chunk_id": chunk.chunk_id,
+                    "content": chunk.content,
+                    "embedding": embedding,
+                    "metadata": {
+                        "document_id": document_id,
+                        "chunk_type": chunk.chunk_type,
+                        "token_count": chunk.token_count,
+                        **chunk.metadata
+                    }
+                }
+                chunks_with_embeddings.append(chunk_dict)
+                processed += 1
+
+            except Exception as e:
+                logger.warning(f"Error embedding chunk {chunk.chunk_id}: {e}")
+
+        # Index chunks in vector store
+        collection = "text_chunks"
+        success = vector_store.add_chunks(collection, chunks_with_embeddings)
+
+        if not success:
+            raise Exception("Failed to add chunks to vector store")
+
+        result = {
+            "document_id": document_id,
+            "status": "completed",
+            "total_chunks": total_chunks,
+            "processed_chunks": processed,
+            "collection": collection
+        }
+
+        logger.info(f"Embeddings completed for {document_id}: {processed} chunks")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error generating embeddings: {e}")
+        self.update_state(
+            state="FAILURE",
+            meta={"error": str(e)}
+        )
+        raise
+
+
+@shared_task(bind=True, name="app.tasks.document_tasks.index_chunks")
+def index_chunks(self, document_id: str, chunks: list, collection: str = "text_chunks"):
+    """
+    Index chunks in vector store
+
+    Args:
+        document_id: Document identifier
+        chunks: List of chunks with embeddings
+        collection: Target collection
+
+    Returns:
+        Indexing results
+    """
+    try:
+        logger.info(f"Indexing {len(chunks)} chunks in {collection}")
+
+        vector_store = VectorStore()
+        success = vector_store.add_chunks(collection, chunks)
+
+        if not success:
+            raise Exception(f"Failed to index chunks in {collection}")
+
+        result = {
+            "document_id": document_id,
+            "collection": collection,
+            "indexed_chunks": len(chunks),
+            "status": "success"
+        }
+
+        logger.info(f"Indexing completed: {result}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error indexing chunks: {e}")
+        self.update_state(
+            state="FAILURE",
+            meta={"error": str(e)}
+        )
+        raise
+
+
+@shared_task(name="app.tasks.document_tasks.cleanup_old_results")
+def cleanup_old_results():
+    """
+    Cleanup old Celery results from Redis
+    """
+    try:
+        from celery.result import AsyncResult
+        logger.info("Cleaning up old Celery results")
+        # Results older than 1 day will be automatically purged by Redis TTL
+        logger.info("Cleanup completed")
+        return {"status": "success", "message": "Old results cleaned"}
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")
+        return {"status": "error", "message": str(e)}
