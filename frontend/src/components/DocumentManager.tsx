@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useDocumentStore } from '../stores/documentStore';
 import { documentsAPI } from '../services/api';
 import DocumentList from './DocumentList';
@@ -14,9 +14,17 @@ const DocumentManager: React.FC = () => {
     setError,
   } = useDocumentStore();
   const [showUpload, setShowUpload] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     fetchDocuments();
+    setupWebSocket();
+
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
   }, []);
 
   const fetchDocuments = async () => {
@@ -36,6 +44,63 @@ const DocumentManager: React.FC = () => {
   const handleUploadSuccess = async () => {
     setShowUpload(false);
     await fetchDocuments();
+  };
+
+  const setupWebSocket = () => {
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('WebSocket connected');
+        // Subscribe to document status updates
+        ws.send(JSON.stringify({
+          action: 'subscribe',
+          channels: ['document_status']
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+
+          // Handle document status update
+          if (message.type === 'document_status' || message.type === 'processing_update') {
+            const { document_id, status, chunks, error } = message;
+
+            // Update the document in the store
+            setDocuments(documents.map(doc => {
+              if (doc.document_id === document_id) {
+                return {
+                  ...doc,
+                  status,
+                  text_chunks: chunks || doc.text_chunks,
+                  error_message: error || null
+                };
+              }
+              return doc;
+            }));
+          }
+        } catch (err) {
+          console.error('Error parsing WebSocket message:', err);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        // Attempt to reconnect after 3 seconds
+        setTimeout(() => setupWebSocket(), 3000);
+      };
+
+      wsRef.current = ws;
+    } catch (error) {
+      console.error('Failed to setup WebSocket:', error);
+    }
   };
 
   return (
