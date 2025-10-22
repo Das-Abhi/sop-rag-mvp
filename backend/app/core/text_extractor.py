@@ -16,11 +16,15 @@ class TextExtractor:
 
     def __init__(self):
         # Initialize PaddleOCR for image text extraction
+        self.ocr = None
         try:
             self.ocr = PaddleOCR(use_angle_cls=True, lang='en')
-            logger.info("PaddleOCR initialized")
+            logger.info("PaddleOCR initialized successfully")
+        except ImportError as e:
+            logger.warning(f"PaddleOCR dependencies not fully installed: {e}. OCR will be disabled. Install with: pip install paddlepaddle")
+            self.ocr = None
         except Exception as e:
-            logger.error(f"Failed to initialize PaddleOCR: {e}")
+            logger.warning(f"Failed to initialize PaddleOCR: {e}. OCR will be disabled.")
             self.ocr = None
 
     def extract_from_region(self, pdf_path: str, bbox: Tuple[float, float, float, float]) -> str:
