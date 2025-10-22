@@ -332,14 +332,23 @@ class RAGEngine:
         citations = []
         for i, chunk in enumerate(chunks):
             metadata = chunk.get("metadata", {})
+            logger.debug(f"Citation {i}: chunk metadata = {metadata}")
 
-            # Extract document name from source_file or document_id
+            # Extract document name from source_file, document_id, or chunk_id
             source_file = metadata.get("source_file", "")
             if source_file:
                 # Extract just the filename without path
                 doc_name = source_file.split("/")[-1].replace(".pdf", "").replace(".txt", "").replace(".docx", "")
+                logger.debug(f"Using source_file: {doc_name}")
             else:
-                doc_name = "Unknown Document"
+                # Fallback to document_id if source_file missing (for old indexed documents)
+                doc_id = metadata.get("document_id", "")
+                if doc_id:
+                    doc_name = f"Document ({doc_id[:8]}...)"
+                    logger.warning(f"source_file missing, using document_id fallback: {doc_name}")
+                else:
+                    doc_name = "Unknown Document"
+                    logger.warning(f"No source_file or document_id in metadata: {metadata}")
 
             # Get relevance score from reranker (0-1 scale, convert from cross-encoder which is ~-3 to 0)
             relevance_score = chunk.get("relevance_score", 0)
