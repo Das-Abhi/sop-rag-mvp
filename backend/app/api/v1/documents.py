@@ -55,6 +55,7 @@ async def upload_document(file: UploadFile = File(...)):
 
         # Store in database
         db = SessionLocal()
+        doc_data = None
         try:
             doc = DocumentCRUD.create(
                 db=db,
@@ -65,6 +66,21 @@ async def upload_document(file: UploadFile = File(...)):
                 file_type=doc_type
             )
             db.commit()
+            # Extract data while session is still open
+            doc_data = DocumentInfo(
+                document_id=doc.document_id,
+                title=doc.title,
+                description=doc.description,
+                file_path=doc.file_path,
+                file_size=doc.file_size,
+                page_count=doc.page_count,
+                status=doc.status,
+                text_chunks=doc.text_chunks,
+                image_chunks=doc.image_chunks,
+                table_chunks=doc.table_chunks,
+                created_at=doc.created_at,
+                updated_at=doc.updated_at
+            )
         finally:
             db.close()
 
@@ -72,20 +88,7 @@ async def upload_document(file: UploadFile = File(...)):
         task = process_document.delay(document_id, file_path, doc_type)
         logger.info(f"Document uploaded: {document_id}, task: {task.id}")
 
-        return DocumentInfo(
-            document_id=doc.document_id,
-            title=doc.title,
-            description=doc.description,
-            file_path=doc.file_path,
-            file_size=doc.file_size,
-            page_count=doc.page_count,
-            status=doc.status,
-            text_chunks=doc.text_chunks,
-            image_chunks=doc.image_chunks,
-            table_chunks=doc.table_chunks,
-            created_at=doc.created_at,
-            updated_at=doc.updated_at
-        )
+        return doc_data
 
     except HTTPException:
         raise
@@ -111,7 +114,7 @@ async def get_document(document_id: str):
         if not doc:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        return DocumentInfo(
+        doc_data = DocumentInfo(
             document_id=doc.document_id,
             title=doc.title,
             description=doc.description,
@@ -125,6 +128,7 @@ async def get_document(document_id: str):
             created_at=doc.created_at,
             updated_at=doc.updated_at
         )
+        return doc_data
     finally:
         db.close()
 
@@ -154,24 +158,27 @@ async def list_documents(status: str = None, page: int = 1, page_size: int = 10)
         end = start + page_size
         paginated_docs = docs[start:end]
 
+        # Extract data while session is still open
+        documents = [
+            DocumentInfo(
+                document_id=doc.document_id,
+                title=doc.title,
+                description=doc.description,
+                file_path=doc.file_path,
+                file_size=doc.file_size,
+                page_count=doc.page_count,
+                status=doc.status,
+                text_chunks=doc.text_chunks,
+                image_chunks=doc.image_chunks,
+                table_chunks=doc.table_chunks,
+                created_at=doc.created_at,
+                updated_at=doc.updated_at
+            )
+            for doc in paginated_docs
+        ]
+
         return DocumentListResponse(
-            documents=[
-                DocumentInfo(
-                    document_id=doc.document_id,
-                    title=doc.title,
-                    description=doc.description,
-                    file_path=doc.file_path,
-                    file_size=doc.file_size,
-                    page_count=doc.page_count,
-                    status=doc.status,
-                    text_chunks=doc.text_chunks,
-                    image_chunks=doc.image_chunks,
-                    table_chunks=doc.table_chunks,
-                    created_at=doc.created_at,
-                    updated_at=doc.updated_at
-                )
-                for doc in paginated_docs
-            ],
+            documents=documents,
             total=total,
             page=page,
             page_size=page_size
@@ -231,7 +238,8 @@ async def update_document_status(document_id: str, status: str):
         db.commit()
         logger.info(f"Document {document_id} status updated to: {status}")
 
-        return DocumentInfo(
+        # Extract data while session is still open
+        doc_data = DocumentInfo(
             document_id=updated_doc.document_id,
             title=updated_doc.title,
             description=updated_doc.description,
@@ -245,5 +253,6 @@ async def update_document_status(document_id: str, status: str):
             created_at=updated_doc.created_at,
             updated_at=updated_doc.updated_at
         )
+        return doc_data
     finally:
         db.close()
