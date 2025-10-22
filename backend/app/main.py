@@ -19,7 +19,7 @@ from app.core.rag_engine import RAGEngine
 from app.database import init_db
 
 # Import API routes
-from app.api.v1 import query, documents, processing
+from app.api.v1 import query, documents, processing, websocket
 
 app = FastAPI(
     title="SOP RAG MVP",
@@ -113,6 +113,7 @@ async def shutdown_event():
 app.include_router(documents.router, prefix="/api/v1")
 app.include_router(query.router, prefix="/api/v1")
 app.include_router(processing.router, prefix="/api/v1")
+app.include_router(websocket.router)
 
 
 @app.get("/")
